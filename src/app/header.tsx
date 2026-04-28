@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useCart } from "./components/CartProvider";
 
 export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { itemCount } = useCart();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -136,11 +138,12 @@ export default function Header() {
             </button>
 
             {/* Cart */}
-            <button
+            <Link
+              href="/checkout"
               className={`p-2 hover:opacity-70 transition-opacity relative ${
                 isScrolled ? "text-gray-900" : "text-white"
               }`}
-              aria-label="Shopping Cart"
+              aria-label={`Shopping Cart, ${itemCount} item${itemCount === 1 ? "" : "s"}`}
             >
               <svg
                 className="w-5 h-5"
@@ -155,10 +158,12 @@ export default function Header() {
                   d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-2.5 5M7 13v5a2 2 0 002 2h8.5M17 13v5a2 2 0 002 2H21M9 19v.01M20 19v.01"
                 />
               </svg>
-              <span className="absolute -top-1 -right-1 bg-yellow-400 text-black text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
-                2
-              </span>
-            </button>
+              {itemCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-yellow-400 text-black text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                  {itemCount > 99 ? "99+" : itemCount}
+                </span>
+              )}
+            </Link>
 
             {/* Mobile menu button */}
             <button

@@ -1,22 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { use, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { products } from "@/data/products";
 import Header from "@/app/header";
+import { useCart } from "@/app/components/CartProvider";
 
 interface ProductPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export default function ProductPage({ params }: ProductPageProps) {
+  const { id } = use(params);
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [selectedCrypto, setSelectedCrypto] = useState("BTC");
+  const [addedFlash, setAddedFlash] = useState(false);
+  const { addItem } = useCart();
+  const router = useRouter();
 
-  const productId = parseInt(params.id, 10);
+  const productId = parseInt(id, 10);
   const product = products.find((p) => p.id === productId);
+
+  const handleAddToCart = () => {
+    if (!product) return;
+    addItem(product.id, quantity);
+    setAddedFlash(true);
+    window.setTimeout(() => setAddedFlash(false), 1500);
+  };
+
+  const handleBuyNow = () => {
+    if (!product) return;
+    addItem(product.id, quantity);
+    router.push("/checkout");
+  };
 
   if (!product) {
     return (
@@ -26,7 +45,7 @@ export default function ProductPage({ params }: ProductPageProps) {
             Product Not Found
           </h1>
           <p className="text-gray-600 mb-8">
-            We couldn't find the product you're looking for.
+            We couldn&rsquo;t find the product you&rsquo;re looking for.
           </p>
           <Link
             href="/"
@@ -203,11 +222,17 @@ export default function ProductPage({ params }: ProductPageProps) {
 
               {/* Action Buttons */}
               <div className="space-y-4">
-                <button className="w-full py-4 bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors rounded-lg">
-                  ADD TO CART
+                <button
+                  onClick={handleAddToCart}
+                  className="w-full py-4 bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors rounded-lg"
+                >
+                  {addedFlash ? "ADDED TO CART ✓" : "ADD TO CART"}
                 </button>
 
-                <button className="w-full py-4 bg-yellow-400 text-black font-medium hover:bg-yellow-500 transition-colors rounded-lg">
+                <button
+                  onClick={handleBuyNow}
+                  className="w-full py-4 bg-yellow-400 text-black font-medium hover:bg-yellow-500 transition-colors rounded-lg"
+                >
                   BUY NOW WITH {selectedCrypto}
                 </button>
 

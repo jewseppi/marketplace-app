@@ -81,8 +81,8 @@ export default function Home() {
             </h2>
             <div className="w-24 h-px bg-gray-900 mx-auto mb-8"></div>
             <p className="text-gray-600 text-lg max-w-2xl mx-auto">
-              Discover handpicked luxury items from the world's most prestigious
-              designers
+              Discover handpicked luxury items from the world&rsquo;s most
+              prestigious designers
             </p>
           </div>
 
