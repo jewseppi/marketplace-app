@@ -1,8 +1,7 @@
 import Image from "next/image";
-import Link from "next/link";
-import { products } from "@/data/products";
 import { Button } from "./components/ui/button";
 import FeaturedProducts from "./components/FeaturedProducts";
+import ProductExplorer from "./components/ProductExplorer";
 import Header from "./header";
 
 export default function Home() {
@@ -71,152 +70,8 @@ export default function Home() {
       {/* Featured Products Section */}
       <FeaturedProducts />
 
-      {/* Enhanced Store Section */}
-      <section className="w-full py-24 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-6">
-          {/* Section Header */}
-          <div className="text-center mb-16">
-            <h2 className="text-4xl md:text-5xl font-light mb-4 text-gray-900">
-              Our <span className="font-semibold">Collection</span>
-            </h2>
-            <div className="w-24 h-px bg-gray-900 mx-auto mb-8"></div>
-            <p className="text-gray-600 text-lg max-w-2xl mx-auto">
-              Discover handpicked luxury items from the world&rsquo;s most
-              prestigious designers
-            </p>
-          </div>
-
-          {/* Enhanced Search Bar */}
-          <div className="flex justify-center mb-12">
-            <div className="relative w-full max-w-md">
-              <input
-                type="text"
-                placeholder="Search luxury items..."
-                className="w-full px-6 py-4 bg-white border border-gray-200 rounded-none focus:outline-none focus:border-gray-400 transition-colors text-gray-900 placeholder-gray-500"
-              />
-              <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
-                <svg
-                  className="w-5 h-5 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          {/* Enhanced Navigation */}
-          <nav className="flex justify-center mb-16">
-            <div className="flex space-x-12 border-b border-gray-200">
-              {[
-                { name: "All", href: "/all", active: true },
-                { name: "Bags", href: "/bags" },
-                { name: "Shoes", href: "/shoes" },
-                { name: "Clothing", href: "/clothes" },
-                { name: "Jewelry", href: "/jewelry" },
-              ].map((category) => (
-                <Link
-                  key={category.name}
-                  href={category.href}
-                  className={`pb-4 text-lg font-medium transition-colors relative ${
-                    category.active
-                      ? "text-gray-900 border-b-2 border-gray-900"
-                      : "text-gray-500 hover:text-gray-900"
-                  }`}
-                >
-                  {category.name}
-                </Link>
-              ))}
-            </div>
-          </nav>
-
-          {/* Enhanced Product Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {products.map((product) => (
-              <div
-                key={product.id}
-                className="group cursor-pointer bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-xl transition-all duration-500"
-              >
-                <Link href={`/product/${product.id}`}>
-                  <div className="relative overflow-hidden">
-                    <Image
-                      src={product.images.main}
-                      alt={product.title}
-                      width={400}
-                      height={400}
-                      className="w-full h-80 object-cover group-hover:scale-105 transition-transform duration-700"
-                    />
-
-                    {/* Hover overlay */}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        <Button className="bg-white text-black hover:bg-gray-100 rounded-none px-6 py-2 text-sm font-medium">
-                          VIEW DETAILS
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Wishlist button */}
-                    <button className="absolute top-4 right-4 p-2 bg-white/90 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 hover:bg-white">
-                      <svg
-                        className="w-4 h-4 text-gray-700"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                        />
-                      </svg>
-                    </button>
-                  </div>
-
-                  <div className="p-6">
-                    <h3 className="text-lg font-medium text-gray-900 mb-2 group-hover:text-gray-700 transition-colors">
-                      {product.title}
-                    </h3>
-                    <p className="text-gray-500 text-sm mb-4 line-clamp-2">
-                      {product.description}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xl font-semibold text-gray-900">
-                        ${product.price.toLocaleString()}
-                      </p>
-                      <div className="flex items-center text-xs text-gray-400">
-                        <svg
-                          className="w-4 h-4 mr-1"
-                          fill="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm4.5 7.5L12 14l-4.5-4.5L9 8l3 3 6-6 1.5 1.5z" />
-                        </svg>
-                        Crypto Accepted
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              </div>
-            ))}
-          </div>
-
-          {/* Load More Button */}
-          <div className="text-center mt-16">
-            <Button className="px-12 py-4 bg-gray-900 text-white hover:bg-gray-800 rounded-none font-medium">
-              LOAD MORE ITEMS
-            </Button>
-          </div>
-        </div>
-      </section>
+      {/* Interactive Store Section */}
+      <ProductExplorer />
 
       {/* Trust Indicators */}
       <section className="py-16 bg-white border-t border-gray-100">
