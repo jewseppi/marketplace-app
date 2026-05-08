@@ -1,64 +1,38 @@
-import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import crypto from "crypto";
+import { NextResponse } from "next/server";
+import { createOrder, getOrders, getOrder } from "@/data/products";
 
-const CART_COOKIE = "crypto_couture_cart";
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const orderId = searchParams.get("orderId");
 
-function parseCart(cookieVal: string): Array<{ id: number; quantity: number }> {
-  try {
-    const parsed = JSON.parse(cookieVal);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (e: any) =>
-        typeof e === "object" &&
-        typeof e.id === "number" &&
-        typeof e.quantity === "number" &&
-        e.quantity > 0,
-    );
-  } catch {
-    return [];
+  if (orderId) {
+    const order = getOrder(orderId);
+    if (!order) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
+    return NextResponse.json(order);
   }
+
+  return NextResponse.json({ orders: getOrders() });
 }
 
-export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const raw = cookieStore.get(CART_COOKIE)?.value || "[]";
-  const cart = parseCart(raw);
+export async function POST(request: Request) {
+  const body = await request.json();
+  const { cartId, customerEmail, paymentMethod } = body;
 
-  if (cart.length === 0) {
-    return NextResponse.json({ error: "Cart is empty" }, { status: 400 });
+  if (!cartId) return NextResponse.json({ error: "cartId required" }, { status: 400 });
+  if (!customerEmail) return NextResponse.json({ error: "customerEmail required" }, { status: 400 });
+  if (!paymentMethod) return NextResponse.json({ error: "paymentMethod required" }, { status: 400 });
+
+  const validMethods = ["BTC", "ETH", "USDT", "USDC"];
+  if (!validMethods.includes(paymentMethod)) {
+    return NextResponse.json({ error: `Invalid payment method. Must be one of: ${validMethods.join(", ")}` }, { status: 400 });
   }
 
-  const body = await request.json();
-  const { cryptoCurrency, walletAddress } = body as {
-    cryptoCurrency: string;
-    walletAddress: string;
-  };
+  const result = createOrder(cartId, customerEmail, paymentMethod);
+  if ("error" in result) {
+    return NextResponse.json(result, { status: 400 });
+  }
 
-  const orderId = crypto.randomUUID();
-
-  // TODO: Phase 2 — wire ethers.js to smart contract
-  // For now, return a pending order with payment instructions
-  const order = {
-    id: orderId,
-    items: cart,
-    status: "pending_payment",
-    payment: {
-      currency: cryptoCurrency,
-      walletAddress,
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min window
-    },
-    createdAt: new Date().toISOString(),
-  };
-
-  // Clear the cart after order creation
-  cookieStore.set(CART_COOKIE, "[]", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-  });
-
-  return NextResponse.json({ order });
+  return NextResponse.json(result, { status: 201 });
 }

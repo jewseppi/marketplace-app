@@ -1,82 +1,75 @@
-import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import crypto from "crypto";
+import { NextResponse } from "next/server";
+import { createCart, addToCart, removeFromCart, updateCartQuantity, clearCart, getCart } from "@/data/products";
 
-const CART_COOKIE = "crypto_couture_cart";
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const cartId = searchParams.get("cartId");
 
-function parseCart(cookieVal: string): Array<{ id: number; quantity: number }> {
-  try {
-    const parsed = JSON.parse(cookieVal);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (e: any) =>
-        typeof e === "object" &&
-        typeof e.id === "number" &&
-        typeof e.quantity === "number" &&
-        e.quantity > 0,
-    );
-  } catch {
-    return [];
+  if (!cartId) {
+    return NextResponse.json({ error: "cartId required" }, { status: 400 });
   }
+
+  const cart = getCart(cartId);
+  if (!cart) {
+    return NextResponse.json({ error: "Cart not found" }, { status: 404 });
+  }
+
+  return NextResponse.json(cart);
 }
 
-export async function GET() {
-  const cookieStore = await cookies();
-  const raw = cookieStore.get(CART_COOKIE)?.value;
-  const cart = parseCart(raw || "[]");
-  return NextResponse.json({ cart });
-}
-
-export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const raw = cookieStore.get(CART_COOKIE)?.value || "[]";
-  let cart = parseCart(raw);
-
+export async function POST(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const action = searchParams.get("action");
   const body = await request.json();
-  const { action, id, quantity } = body as {
-    action: "add" | "remove" | "clear" | "set-quantity";
-    id?: number;
-    quantity?: number;
-  };
+
+  // Create new cart
+  if (action === "create") {
+    const cart = createCart();
+    return NextResponse.json(cart, { status: 201 });
+  }
+
+  const cartId = searchParams.get("cartId");
+  if (!cartId) {
+    return NextResponse.json({ error: "cartId required" }, { status: 400 });
+  }
 
   switch (action) {
     case "add": {
-      const existing = cart.find((e) => e.id === id);
-      if (existing) {
-        existing.quantity += quantity || 1;
-      } else {
-        cart.push({ id: id!, quantity: quantity || 1 });
+      const { productId, quantity } = body;
+      if (!productId) return NextResponse.json({ error: "productId required" }, { status: 400 });
+      const result = addToCart(cartId, productId, quantity);
+      if ("error" in result) {
+        return NextResponse.json(result, { status: 400 });
       }
-      break;
-    }
-    case "set-quantity": {
-      if (quantity && quantity <= 0) {
-        cart = cart.filter((e) => e.id !== id);
-      } else {
-        cart = cart.map((e) => (e.id === id ? { ...e, quantity: quantity! } : e));
-      }
-      break;
+      return NextResponse.json(result);
     }
     case "remove": {
-      cart = cart.filter((e) => e.id !== id);
-      break;
+      const { productId } = body;
+      if (!productId) return NextResponse.json({ error: "productId required" }, { status: 400 });
+      const result = removeFromCart(cartId, productId);
+      if ("error" in result) {
+        return NextResponse.json(result, { status: 400 });
+      }
+      return NextResponse.json(result);
+    }
+    case "update": {
+      const { productId, quantity } = body;
+      if (!productId) return NextResponse.json({ error: "productId required" }, { status: 400 });
+      if (quantity === undefined) return NextResponse.json({ error: "quantity required" }, { status: 400 });
+      const result = updateCartQuantity(cartId, productId, quantity);
+      if ("error" in result) {
+        return NextResponse.json(result, { status: 400 });
+      }
+      return NextResponse.json(result);
     }
     case "clear": {
-      cart = [];
-      break;
+      const result = clearCart(cartId);
+      if ("error" in result) {
+        return NextResponse.json(result, { status: 400 });
+      }
+      return NextResponse.json(result);
     }
     default:
-      return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+      return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
   }
-
-  const serialized = JSON.stringify(cart);
-  cookieStore.set(CART_COOKIE, serialized, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 30, // 30 days
-    path: "/",
-  });
-
-  return NextResponse.json({ cart });
 }
