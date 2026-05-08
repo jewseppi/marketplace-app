@@ -1,11 +1,26 @@
 "use client";
 
-import { products } from "@/data/products";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
 
 export default function FeaturedProducts() {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchProducts = useCallback(async () => {
+    const res = await fetch("/api/products");
+    const data = await res.json();
+    setProducts(Array.isArray(data) ? data.slice(0, 4) : []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  if (loading) return <div className="text-center py-20">Loading...</div>;
   if (products.length === 0) return null;
 
   return (

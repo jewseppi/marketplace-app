@@ -1,10 +1,9 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { products } from "@/data/products";
 import Header from "@/app/header";
 import { useCart } from "@/app/components/CartProvider";
 
@@ -18,11 +17,41 @@ export default function ProductPage({ params }: ProductPageProps) {
   const [quantity, setQuantity] = useState(1);
   const [selectedCrypto, setSelectedCrypto] = useState("BTC");
   const [addedFlash, setAddedFlash] = useState(false);
+  const [product, setProduct] = useState<any>(null);
+  const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const { addItem } = useCart();
   const router = useRouter();
 
-  const productId = parseInt(id, 10);
-  const product = products.find((p) => p.id === productId);
+  const fetchProduct = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch(`/api/products?id=${id}`);
+    if (res.ok) {
+      const data = await res.json();
+      setProduct(data);
+    } else {
+      setProduct(null);
+    }
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => {
+    fetchProduct();
+  }, [fetchProduct]);
+
+  useEffect(() => {
+    if (product) {
+      fetch("/api/products")
+        .then((r) => r.json())
+        .then((data) =>
+          setRelatedProducts(
+            data
+              .filter((p: any) => p.id !== product.id)
+              .slice(0, 4),
+          ),
+        );
+    }
+  }, [product]);
 
   const handleAddToCart = () => {
     if (!product) return;
@@ -36,6 +65,14 @@ export default function ProductPage({ params }: ProductPageProps) {
     addItem(product.id, quantity);
     router.push("/checkout");
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="inline-block w-8 h-8 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (!product) {
     return (
@@ -103,7 +140,7 @@ export default function ProductPage({ params }: ProductPageProps) {
 
             {/* Thumbnail Images */}
             <div className="flex space-x-4">
-              {allImages.map((image, index) => (
+              {allImages.map((image: string, index: number) => (
                 <button
                   key={index}
                   onClick={() => setSelectedImage(index)}
@@ -320,33 +357,30 @@ export default function ProductPage({ params }: ProductPageProps) {
             You might also like
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-            {products
-              .filter((p) => p.id !== product.id)
-              .slice(0, 4)
-              .map((relatedProduct) => (
-                <Link
-                  key={relatedProduct.id}
-                  href={`/product/${relatedProduct.id}`}
-                >
-                  <div className="group cursor-pointer">
-                    <div className="aspect-square overflow-hidden bg-gray-50 rounded-lg mb-4">
-                      <Image
-                        src={relatedProduct.images.main}
-                        alt={relatedProduct.title}
-                        width={300}
-                        height={300}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                    </div>
-                    <h3 className="font-medium text-gray-900 mb-2">
-                      {relatedProduct.title}
-                    </h3>
-                    <p className="text-gray-600">
-                      ${relatedProduct.price.toLocaleString()}
-                    </p>
+            {relatedProducts.map((relatedProduct) => (
+              <Link
+                key={relatedProduct.id}
+                href={`/product/${relatedProduct.id}`}
+              >
+                <div className="group cursor-pointer">
+                  <div className="aspect-square overflow-hidden bg-gray-50 rounded-lg mb-4">
+                    <Image
+                      src={relatedProduct.images.main}
+                      alt={relatedProduct.title}
+                      width={300}
+                      height={300}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
                   </div>
-                </Link>
-              ))}
+                  <h3 className="font-medium text-gray-900 mb-2">
+                    {relatedProduct.title}
+                  </h3>
+                  <p className="text-gray-600">
+                    ${relatedProduct.price.toLocaleString()}
+                  </p>
+                </div>
+              </Link>
+            ))}
           </div>
         </div>
       </div>

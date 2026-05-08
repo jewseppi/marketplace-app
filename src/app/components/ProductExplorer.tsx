@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
   PRODUCT_CATEGORIES,
-  products,
   type ProductCategory,
 } from "@/data/products";
 import { Button } from "./ui/button";
@@ -23,22 +22,36 @@ const CATEGORY_LABELS: Record<CategoryFilter, string> = {
 export default function ProductExplorer() {
   const [activeCategory, setActiveCategory] = useState<CategoryFilter>("all");
   const [query, setQuery] = useState("");
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchProducts = useCallback(async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (activeCategory !== "all") params.set("category", activeCategory);
+    if (query.trim()) params.set("search", query.trim());
+    const res = await fetch(`/api/products?${params.toString()}`);
+    const data = await res.json();
+    setProducts(Array.isArray(data) ? data : []);
+    setLoading(false);
+  }, [activeCategory, query]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
 
   const filtered = useMemo(() => {
-    const trimmed = query.trim().toLowerCase();
-    return products.filter((product) => {
-      const inCategory =
-        activeCategory === "all" ||
-        product.category === (activeCategory as ProductCategory);
-      if (!inCategory) return false;
-      if (!trimmed) return true;
-      return (
-        product.title.toLowerCase().includes(trimmed) ||
-        product.description.toLowerCase().includes(trimmed) ||
-        product.category.toLowerCase().includes(trimmed)
+    if (query.trim()) {
+      const trimmed = query.trim().toLowerCase();
+      return products.filter(
+        (product) =>
+          product.title.toLowerCase().includes(trimmed) ||
+          product.description.toLowerCase().includes(trimmed) ||
+          product.category.toLowerCase().includes(trimmed),
       );
-    });
-  }, [activeCategory, query]);
+    }
+    return products;
+  }, [products, query]);
 
   return (
     <section className="w-full py-24 bg-gray-50">
@@ -110,15 +123,21 @@ export default function ProductExplorer() {
 
         {/* Results meta */}
         <p className="text-sm text-gray-500 text-center mb-8">
-          {filtered.length} {filtered.length === 1 ? "item" : "items"}
-          {activeCategory !== "all"
-            ? ` in ${CATEGORY_LABELS[activeCategory]}`
-            : ""}
-          {query.trim() ? ` matching “${query.trim()}”` : ""}
+          {loading
+            ? "Loading..."
+            : `${filtered.length} ${filtered.length === 1 ? "item" : "items"}${
+                activeCategory !== "all"
+                  ? ` in ${CATEGORY_LABELS[activeCategory]}`
+                  : ""
+              }${query.trim() ? ` matching "${query.trim()}"` : ""}`}
         </p>
 
         {/* Product Grid */}
-        {filtered.length > 0 ? (
+        {loading ? (
+          <div className="text-center py-16">
+            <div className="inline-block w-8 h-8 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+          </div>
+        ) : filtered.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             {filtered.map((product) => (
               <div
