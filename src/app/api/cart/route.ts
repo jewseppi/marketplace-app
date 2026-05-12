@@ -1,75 +1,97 @@
-import { NextResponse } from "next/server";
-import { createCart, addToCart, removeFromCart, updateCartQuantity, clearCart, getCart } from "@/data/products";
+import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { addToCart, clearCart, createCart, getCart, getProduct, removeFromCart, updateCartQuantity } from "@/db";
+import {
+  type Product,
+} from "@/data/products";
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const cartId = searchParams.get("cartId");
+const CART_COOKIE = "cc_cart_id";
 
-  if (!cartId) {
-    return NextResponse.json({ error: "cartId required" }, { status: 400 });
-  }
-
+function summarizeCart(cartId: string) {
   const cart = getCart(cartId);
-  if (!cart) {
-    return NextResponse.json({ error: "Cart not found" }, { status: 404 });
-  }
-
-  return NextResponse.json(cart);
+  const items = cart?.items ?? [];
+  const lines = items
+    .map((item) => {
+      const product = getProduct(item.productId);
+      if (!product) {
+        return null;
+      }
+      return { id: item.productId, quantity: item.quantity, product };
+    })
+    .filter((item): item is { id: number; quantity: number; product: Product } => item !== null);
+  const compactCart = lines.map((item) => ({ id: item.id, quantity: item.quantity }));
+  const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0);
+  const subtotal = lines.reduce((sum, line) => sum + line.product.price * line.quantity, 0);
+  return { cartId, cart: compactCart, lines, itemCount, subtotal };
 }
 
-export async function POST(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const action = searchParams.get("action");
-  const body = await request.json();
-
-  // Create new cart
-  if (action === "create") {
-    const cart = createCart();
-    return NextResponse.json(cart, { status: 201 });
+async function getOrCreateCartId() {
+  const store = await cookies();
+  const existing = store.get(CART_COOKIE)?.value;
+  if (existing && getCart(existing)) {
+    return { cartId: existing, created: false };
   }
+  const cart = createCart();
+  return { cartId: cart.id, created: true };
+}
 
-  const cartId = searchParams.get("cartId");
-  if (!cartId) {
-    return NextResponse.json({ error: "cartId required" }, { status: 400 });
+function jsonWithCart(data: ReturnType<typeof summarizeCart>, created: boolean) {
+  const response = NextResponse.json(data);
+  if (created) {
+    response.cookies.set(CART_COOKIE, data.cartId, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    });
   }
+  return response;
+}
+
+export async function GET() {
+  const { cartId, created } = await getOrCreateCartId();
+  return jsonWithCart(summarizeCart(cartId), created);
+}
+
+export async function POST(request: NextRequest) {
+  const body = await request.json().catch(() => ({}));
+  const action = typeof body?.action === "string" ? body.action : "";
+  const id = Number(body?.id);
+  const quantity = Number(body?.quantity ?? 1);
+  const { cartId, created } = await getOrCreateCartId();
 
   switch (action) {
     case "add": {
-      const { productId, quantity } = body;
-      if (!productId) return NextResponse.json({ error: "productId required" }, { status: 400 });
-      const result = addToCart(cartId, productId, quantity);
+      const result = addToCart(cartId, id, Number.isFinite(quantity) ? quantity : 1);
       if ("error" in result) {
         return NextResponse.json(result, { status: 400 });
       }
-      return NextResponse.json(result);
+      break;
+    }
+    case "set-quantity": {
+      const result = updateCartQuantity(cartId, id, quantity);
+      if ("error" in result) {
+        return NextResponse.json(result, { status: 400 });
+      }
+      break;
     }
     case "remove": {
-      const { productId } = body;
-      if (!productId) return NextResponse.json({ error: "productId required" }, { status: 400 });
-      const result = removeFromCart(cartId, productId);
+      const result = removeFromCart(cartId, id);
       if ("error" in result) {
         return NextResponse.json(result, { status: 400 });
       }
-      return NextResponse.json(result);
-    }
-    case "update": {
-      const { productId, quantity } = body;
-      if (!productId) return NextResponse.json({ error: "productId required" }, { status: 400 });
-      if (quantity === undefined) return NextResponse.json({ error: "quantity required" }, { status: 400 });
-      const result = updateCartQuantity(cartId, productId, quantity);
-      if ("error" in result) {
-        return NextResponse.json(result, { status: 400 });
-      }
-      return NextResponse.json(result);
+      break;
     }
     case "clear": {
       const result = clearCart(cartId);
       if ("error" in result) {
         return NextResponse.json(result, { status: 400 });
       }
-      return NextResponse.json(result);
+      break;
     }
     default:
-      return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
+      return NextResponse.json({ error: `Unknown action: ${action || "(empty)"}` }, { status: 400 });
   }
+
+  return jsonWithCart(summarizeCart(cartId), created);
 }

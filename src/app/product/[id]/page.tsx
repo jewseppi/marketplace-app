@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Header from "@/app/header";
 import { useCart } from "@/app/components/CartProvider";
+import type { Product } from "@/data/products";
 
 interface ProductPageProps {
   params: Promise<{ id: string }>;
@@ -17,8 +18,8 @@ export default function ProductPage({ params }: ProductPageProps) {
   const [quantity, setQuantity] = useState(1);
   const [selectedCrypto, setSelectedCrypto] = useState("BTC");
   const [addedFlash, setAddedFlash] = useState(false);
-  const [product, setProduct] = useState<any>(null);
-  const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
+  const [product, setProduct] = useState<Product | null>(null);
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const { addItem } = useCart();
   const router = useRouter();
@@ -46,7 +47,7 @@ export default function ProductPage({ params }: ProductPageProps) {
         .then((data) =>
           setRelatedProducts(
             data
-              .filter((p: any) => p.id !== product.id)
+              .filter((p: Product) => p.id !== product.id)
               .slice(0, 4),
           ),
         );

@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   PRODUCT_CATEGORIES,
-  type ProductCategory,
+  type Product,
 } from "@/data/products";
 import { Button } from "./ui/button";
 
@@ -22,7 +22,7 @@ const CATEGORY_LABELS: Record<CategoryFilter, string> = {
 export default function ProductExplorer() {
   const [activeCategory, setActiveCategory] = useState<CategoryFilter>("all");
   const [query, setQuery] = useState("");
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchProducts = useCallback(async () => {

@@ -2,50 +2,34 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import Header from "@/app/header";
 import { useCart } from "@/app/components/CartProvider";
+
+type CheckoutOrder = {
+  id: string;
+  status: string;
+  total: number;
+  createdAt: string;
+  payment: {
+    currency: string;
+    walletAddress: string;
+    expiresAt: string;
+  };
+};
 
 const CRYPTO_OPTIONS = ["BTC", "ETH", "USDT", "USDC"] as const;
 
 type OrderState = "idle" | "processing" | "success" | "error";
 
 export default function CheckoutPage() {
-  const { lines, itemCount, subtotal, setQuantity, removeItem, clear } =
-    useCart();
+  const { lines, itemCount, subtotal, setQuantity, removeItem, clear, refresh } = useCart();
   const [selectedCrypto, setSelectedCrypto] =
     useState<(typeof CRYPTO_OPTIONS)[number]>("BTC");
   const [walletAddress, setWalletAddress] = useState("");
   const [orderState, setOrderState] = useState<OrderState>("idle");
-  const [orderData, setOrderData] = useState<any>(null);
+  const [orderData, setOrderData] = useState<CheckoutOrder | null>(null);
   const [error, setError] = useState<string>("");
-
-  // Load cart from server on mount
-  const [cartLines, setCartLines] = useState<any[]>([]);
-  const [cartItemCount, setCartItemCount] = useState(0);
-  const [cartSubtotal, setCartSubtotal] = useState(0);
-
-  useEffect(() => {
-    fetch("/api/cart")
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data.cart)) {
-          setCartLines(data.cart);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  // Compute cart totals from server-side cart
-  const cartTotal = useMemo(() => {
-    let count = 0, total = 0;
-    cartLines.forEach((item: any) => {
-      count += item.quantity;
-      const product = lines.find((p: any) => p.id === item.id);
-      if (product) total += product.price * item.quantity;
-    });
-    return { count, total };
-  }, [cartLines, lines]);
 
   const handleCheckout = useCallback(async () => {
     if (!walletAddress.trim()) {
@@ -75,13 +59,14 @@ export default function CheckoutPage() {
 
       setOrderData(data.order);
       setOrderState("success");
+      await refresh();
     } catch {
       setError("Network error — try again");
       setOrderState("error");
     }
-  }, [selectedCrypto, walletAddress]);
+  }, [refresh, selectedCrypto, walletAddress]);
 
-  if (cartItemCount === 0) {
+  if (itemCount === 0) {
     return (
       <div className="min-h-screen bg-white">
         <Header />
@@ -103,7 +88,6 @@ export default function CheckoutPage() {
     );
   }
 
-  // Success state
   if (orderState === "success" && orderData) {
     return (
       <div className="min-h-screen bg-white">
@@ -149,13 +133,11 @@ export default function CheckoutPage() {
         </h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-          {/* Cart lines */}
           <div className="lg:col-span-2 space-y-6">
-            {cartLines.map((item: any) => {
-              const product = lines.find((p: any) => p.id === item.id);
-              if (!product) return null;
+            {lines.map((line) => {
+              const product = line.product;
               return (
-                <div key={item.id} className="flex gap-4 border-b border-gray-100 pb-6">
+                <div key={line.id} className="flex gap-4 border-b border-gray-100 pb-6">
                   <div className="w-24 h-24 flex-shrink-0 bg-gray-50 rounded-lg overflow-hidden">
                     <Image
                       src={product.images.main}
@@ -168,7 +150,7 @@ export default function CheckoutPage() {
 
                   <div className="flex-1 min-w-0">
                     <Link
-                      href={`/product/${item.id}`}
+                      href={`/product/${line.id}`}
                       className="font-medium text-gray-900 hover:text-gray-700"
                     >
                       {product.title}
@@ -180,17 +162,17 @@ export default function CheckoutPage() {
                     <div className="flex items-center justify-between mt-3">
                       <div className="flex items-center border border-gray-200 rounded-lg">
                         <button
-                          onClick={() => setQuantity(item.id, item.quantity - 1)}
+                          onClick={() => setQuantity(line.id, line.quantity - 1)}
                           className="px-3 py-1 hover:bg-gray-50 transition-colors"
                           aria-label="Decrease quantity"
                         >
                           -
                         </button>
                         <span className="px-4 py-1 font-medium text-sm">
-                          {item.quantity}
+                          {line.quantity}
                         </span>
                         <button
-                          onClick={() => setQuantity(item.id, item.quantity + 1)}
+                          onClick={() => setQuantity(line.id, line.quantity + 1)}
                           className="px-3 py-1 hover:bg-gray-50 transition-colors"
                           aria-label="Increase quantity"
                         >
@@ -198,7 +180,7 @@ export default function CheckoutPage() {
                         </button>
                       </div>
                       <button
-                        onClick={() => removeItem(item.id)}
+                        onClick={() => removeItem(line.id)}
                         className="text-sm text-gray-500 hover:text-gray-900"
                       >
                         Remove
@@ -207,7 +189,7 @@ export default function CheckoutPage() {
                   </div>
 
                   <div className="text-right font-medium text-gray-900">
-                    ${(product.price * item.quantity).toLocaleString()}
+                    ${(product.price * line.quantity).toLocaleString()}
                   </div>
                 </div>
               );
@@ -221,7 +203,6 @@ export default function CheckoutPage() {
             </button>
           </div>
 
-          {/* Summary */}
           <aside className="lg:col-span-1">
             <div className="border border-gray-200 rounded-lg p-6 space-y-6 sticky top-24">
               <h2 className="text-lg font-medium text-gray-900">
@@ -230,8 +211,8 @@ export default function CheckoutPage() {
 
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-gray-600">
-                  <span>Items ({cartTotal.count})</span>
-                  <span>${cartTotal.total.toLocaleString()}</span>
+                  <span>Items ({itemCount})</span>
+                  <span>${subtotal.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-gray-600">
                   <span>Shipping</span>
@@ -239,7 +220,7 @@ export default function CheckoutPage() {
                 </div>
                 <div className="flex justify-between text-gray-900 font-semibold pt-2 border-t border-gray-100">
                   <span>Total</span>
-                  <span>${cartTotal.total.toLocaleString()}</span>
+                  <span>${subtotal.toLocaleString()}</span>
                 </div>
               </div>
 

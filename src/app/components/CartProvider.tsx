@@ -8,11 +8,18 @@ import {
   useMemo,
   useState,
 } from "react";
-import { products } from "@/data/products";
+import type { Product } from "@/data/products";
 
 export type CartItem = { id: number; quantity: number };
 
 export type CartLine = CartItem & { product: Product };
+
+type CartResponse = {
+  cart?: CartItem[];
+  lines?: CartLine[];
+  itemCount?: number;
+  subtotal?: number;
+};
 
 type CartContextValue = {
   items: CartItem[];
@@ -23,102 +30,88 @@ type CartContextValue = {
   setQuantity: (id: number, quantity: number) => Promise<void>;
   removeItem: (id: number) => Promise<void>;
   clear: () => Promise<void>;
+  refresh: () => Promise<void>;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
 
+function normalizeCart(data: CartResponse) {
+  const lines = Array.isArray(data.lines) ? data.lines : [];
+  return {
+    items: Array.isArray(data.cart) ? data.cart : lines.map(({ id, quantity }) => ({ id, quantity })),
+    lines,
+    itemCount: typeof data.itemCount === "number" ? data.itemCount : lines.reduce((sum, line) => sum + line.quantity, 0),
+    subtotal: typeof data.subtotal === "number" ? data.subtotal : lines.reduce((sum, line) => sum + line.product.price * line.quantity, 0),
+  };
+}
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
-  const [hydrated, setHydrated] = useState(false);
+  const [lines, setLines] = useState<CartLine[]>([]);
+  const [itemCount, setItemCount] = useState(0);
+  const [subtotal, setSubtotal] = useState(0);
 
-  // Load cart from server cookie on mount
-  useEffect(() => {
-    fetch("/api/cart")
-      .then((r) => r.json())
-      .then((data) => {
-        setItems(data.cart);
-        setHydrated(true);
-      })
-      .catch(() => {
-        setHydrated(true);
-      });
+  const applyCart = useCallback((data: CartResponse) => {
+    const next = normalizeCart(data);
+    setItems(next.items);
+    setLines(next.lines);
+    setItemCount(next.itemCount);
+    setSubtotal(next.subtotal);
   }, []);
+
+  const refresh = useCallback(async () => {
+    const response = await fetch("/api/cart", { cache: "no-store" });
+    const data = (await response.json()) as CartResponse;
+    applyCart(data);
+  }, [applyCart]);
+
+  useEffect(() => {
+    refresh().catch(() => {});
+  }, [refresh]);
+
+  const mutateCart = useCallback(
+    async (body: Record<string, unknown>) => {
+      const response = await fetch("/api/cart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await response.json()) as CartResponse & { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || "Cart update failed");
+      }
+      applyCart(data);
+    },
+    [applyCart],
+  );
 
   const addItem = useCallback(async (id: number, quantity = 1) => {
-    await fetch("/api/cart", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "add", id, quantity }),
-    });
-    setItems((prev) => {
-      const existing = prev.find((entry) => entry.id === id);
-      if (existing) {
-        return prev.map((entry) =>
-          entry.id === id ? { ...entry, quantity: entry.quantity + quantity } : entry,
-        );
-      }
-      return [...prev, { id, quantity }];
-    });
-  }, []);
+    await mutateCart({ action: "add", id, quantity });
+  }, [mutateCart]);
 
   const setQuantity = useCallback(async (id: number, quantity: number) => {
-    await fetch("/api/cart", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "set-quantity", id, quantity }),
-    });
-    if (quantity <= 0) {
-      setItems((prev) => prev.filter((entry) => entry.id !== id));
-    } else {
-      setItems((prev) =>
-        prev.map((entry) => (entry.id === id ? { ...entry, quantity } : entry)),
-      );
-    }
-  }, []);
+    await mutateCart({ action: "set-quantity", id, quantity });
+  }, [mutateCart]);
 
   const removeItem = useCallback(async (id: number) => {
-    await fetch("/api/cart", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "remove", id }),
-    });
-    setItems((prev) => prev.filter((entry) => entry.id !== id));
-  }, []);
+    await mutateCart({ action: "remove", id });
+  }, [mutateCart]);
 
   const clear = useCallback(async () => {
-    await fetch("/api/cart", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "clear" }),
-    });
-    setItems([]);
-  }, []);
+    await mutateCart({ action: "clear" });
+  }, [mutateCart]);
 
-  const value = useMemo<CartContextValue>(() => {
-    const lines: CartLine[] = items
-      .map((entry) => {
-        const product = products.find((p) => p.id === entry.id);
-        return product ? { ...entry, product } : null;
-      })
-      .filter((line): line is CartLine => line !== null);
-
-    const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0);
-    const subtotal = lines.reduce(
-      (sum, line) => sum + line.product.price * line.quantity,
-      0,
-    );
-
-    return {
-      items,
-      lines,
-      itemCount,
-      subtotal,
-      addItem,
-      setQuantity,
-      removeItem,
-      clear,
-    };
-  }, [items, addItem, setQuantity, removeItem, clear]);
+  const value = useMemo<CartContextValue>(() => ({
+    items,
+    lines,
+    itemCount,
+    subtotal,
+    addItem,
+    setQuantity,
+    removeItem,
+    clear,
+    refresh,
+  }), [items, lines, itemCount, subtotal, addItem, setQuantity, removeItem, clear, refresh]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
