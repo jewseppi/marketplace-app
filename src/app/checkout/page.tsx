@@ -2,9 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "@/app/header";
 import { useCart } from "@/app/components/CartProvider";
+import { useMockContract, useMockWallet } from "@/lib/mock-contract-context";
+import type { PaymentToken } from "@/lib/mock-contract";
 
 type CheckoutOrder = {
   id: string;
@@ -16,67 +18,141 @@ type CheckoutOrder = {
     walletAddress: string;
     expiresAt: string;
   };
+  txHashes: string[];
+  mockOrderIds: number[];
 };
 
-const CRYPTO_OPTIONS = ["BTC", "ETH", "USDT", "USDC"] as const;
-
 type OrderState = "idle" | "processing" | "success" | "error";
+type ConfirmationStep = "idle" | "pending" | "confirmed";
+
+const CRYPTO_OPTIONS: PaymentToken[] = ["BTC", "ETH", "USDT", "USDC"];
 
 export default function CheckoutPage() {
   const { lines, itemCount, subtotal, setQuantity, removeItem, clear, refresh } = useCart();
-  const [selectedCrypto, setSelectedCrypto] =
-    useState<(typeof CRYPTO_OPTIONS)[number]>("BTC");
-  const [walletAddress, setWalletAddress] = useState("");
+  const { contract } = useMockContract();
+  const { connect, connected, address, walletState, getBalance } = useMockWallet();
+
+  const [selectedCrypto, setSelectedCrypto] = useState<PaymentToken>("BTC");
+  const [walletBalance, setWalletBalance] = useState<number>(0);
   const [orderState, setOrderState] = useState<OrderState>("idle");
+  const [confirmationStep, setConfirmationStep] = useState<ConfirmationStep>("idle");
   const [orderData, setOrderData] = useState<CheckoutOrder | null>(null);
-  const [error, setError] = useState<string>("");
+  const [error, setError] = useState("");
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getBalance(selectedCrypto)
+      .then((balance) => {
+        if (active) {
+          setWalletBalance(balance);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setWalletBalance(0);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [getBalance, selectedCrypto, walletState]);
+
+  const connectWallet = useCallback(async () => {
+    setIsConnecting(true);
+    setError("");
+    try {
+      await connect();
+    } catch {
+      setError("Wallet connection failed. Please try again.");
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [connect]);
 
   const handleCheckout = useCallback(async () => {
-    if (!walletAddress.trim()) {
-      setError("Please enter your wallet address");
+    if (!connected || !address) {
+      setError("Connect your wallet to continue");
       return;
     }
+
     setOrderState("processing");
+    setConfirmationStep("pending");
     setError("");
 
     try {
+      const txHashes: string[] = [];
+      const mockOrderIds: number[] = [];
+
+      for (const line of lines) {
+        const listing = contract.ensureListingForProduct(line.id, selectedCrypto);
+        const result = await contract.createOrder(
+          listing.itemId,
+          selectedCrypto,
+          address,
+          line.quantity,
+        );
+        txHashes.push(result.receipt.hash);
+        mockOrderIds.push(result.order.orderId);
+      }
+
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           cryptoCurrency: selectedCrypto,
-          walletAddress: walletAddress.trim(),
+          walletAddress: address,
         }),
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as {
+        error?: string;
+        order?: Omit<CheckoutOrder, "txHashes" | "mockOrderIds">;
+      };
 
-      if (!res.ok) {
-        setError(data.error || "Checkout failed");
-        setOrderState("error");
-        return;
+      if (!res.ok || !data.order) {
+        throw new Error(data.error || "Checkout failed");
       }
 
-      setOrderData(data.order);
+      setConfirmationStep("confirmed");
+      setOrderData({
+        ...data.order,
+        txHashes,
+        mockOrderIds,
+      });
       setOrderState("success");
       await refresh();
-    } catch {
-      setError("Network error — try again");
+    } catch (checkoutError) {
+      setError(checkoutError instanceof Error ? checkoutError.message : "Checkout failed");
+      setConfirmationStep("idle");
       setOrderState("error");
     }
-  }, [refresh, selectedCrypto, walletAddress]);
+  }, [address, connected, contract, lines, refresh, selectedCrypto]);
+
+  const statusSteps = useMemo(
+    () => [
+      {
+        label: "Payment submitted",
+        active: confirmationStep === "pending" || confirmationStep === "confirmed",
+        done: confirmationStep === "confirmed",
+      },
+      {
+        label: "Blockchain confirmation",
+        active: confirmationStep === "confirmed",
+        done: confirmationStep === "confirmed",
+      },
+    ],
+    [confirmationStep],
+  );
 
   if (itemCount === 0) {
     return (
       <div className="min-h-screen bg-white">
         <Header />
         <div className="pt-32 max-w-3xl mx-auto px-6 text-center">
-          <h1 className="text-4xl font-light text-gray-900 mb-4">
-            Your cart is empty
-          </h1>
-          <p className="text-gray-600 mb-8">
-            Browse the collection to add something timeless.
-          </p>
+          <h1 className="text-4xl font-light text-gray-900 mb-4">Your cart is empty</h1>
+          <p className="text-gray-600 mb-8">Browse the collection to add something timeless.</p>
           <Link
             href="/"
             className="inline-block px-8 py-3 bg-gray-900 text-white hover:bg-gray-800 transition-colors font-medium"
@@ -98,18 +174,30 @@ export default function CheckoutPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="text-4xl font-light text-gray-900 mb-4">Order Placed</h1>
+          <h1 className="text-4xl font-light text-gray-900 mb-4">Payment Confirmed</h1>
           <p className="text-gray-600 mb-8">
-            Your order <span className="font-mono text-sm">{orderData.id}</span> is pending payment.
+            Order <span className="font-mono text-sm">{orderData.id}</span> has been recorded and confirmed on the mock chain.
           </p>
 
           <div className="border border-gray-200 rounded-lg p-6 text-left space-y-4">
-            <h3 className="font-medium text-gray-900">Payment Instructions</h3>
+            <h3 className="font-medium text-gray-900">Confirmation Details</h3>
             <div className="space-y-2 text-sm text-gray-600">
-              <p>Send exactly <strong>{orderData.payment.currency}</strong> to:</p>
-              <div className="bg-gray-50 p-3 font-mono text-xs break-all">{orderData.payment.walletAddress}</div>
-              <p>Payment window expires at <strong>{new Date(orderData.payment.expiresAt).toLocaleTimeString()}</strong></p>
-              <p>Once payment is confirmed on-chain, your items will be shipped immediately.</p>
+              <p>
+                Paid with <strong>{orderData.payment.currency}</strong> from <span className="font-mono text-xs break-all">{orderData.payment.walletAddress}</span>
+              </p>
+              <p>
+                Mock contract orders: <strong>{orderData.mockOrderIds.join(", ")}</strong>
+              </p>
+              <div>
+                <p className="mb-2 font-medium text-gray-900">Transaction Hash{orderData.txHashes.length > 1 ? "es" : ""}</p>
+                <div className="space-y-2">
+                  {orderData.txHashes.map((hash) => (
+                    <div key={hash} className="bg-gray-50 p-3 font-mono text-xs break-all">
+                      {hash}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -128,9 +216,7 @@ export default function CheckoutPage() {
       <Header />
 
       <div className="pt-24 max-w-5xl mx-auto px-6 py-12">
-        <h1 className="text-3xl md:text-4xl font-light text-gray-900 mb-8">
-          Checkout
-        </h1>
+        <h1 className="text-3xl md:text-4xl font-light text-gray-900 mb-8">Checkout</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           <div className="lg:col-span-2 space-y-6">
@@ -149,15 +235,10 @@ export default function CheckoutPage() {
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <Link
-                      href={`/product/${line.id}`}
-                      className="font-medium text-gray-900 hover:text-gray-700"
-                    >
+                    <Link href={`/product/${line.id}`} className="font-medium text-gray-900 hover:text-gray-700">
                       {product.title}
                     </Link>
-                    <p className="text-sm text-gray-500 line-clamp-2 mt-1">
-                      {product.description}
-                    </p>
+                    <p className="text-sm text-gray-500 line-clamp-2 mt-1">{product.description}</p>
 
                     <div className="flex items-center justify-between mt-3">
                       <div className="flex items-center border border-gray-200 rounded-lg">
@@ -168,9 +249,7 @@ export default function CheckoutPage() {
                         >
                           -
                         </button>
-                        <span className="px-4 py-1 font-medium text-sm">
-                          {line.quantity}
-                        </span>
+                        <span className="px-4 py-1 font-medium text-sm">{line.quantity}</span>
                         <button
                           onClick={() => setQuantity(line.id, line.quantity + 1)}
                           className="px-3 py-1 hover:bg-gray-50 transition-colors"
@@ -179,35 +258,25 @@ export default function CheckoutPage() {
                           +
                         </button>
                       </div>
-                      <button
-                        onClick={() => removeItem(line.id)}
-                        className="text-sm text-gray-500 hover:text-gray-900"
-                      >
+                      <button onClick={() => removeItem(line.id)} className="text-sm text-gray-500 hover:text-gray-900">
                         Remove
                       </button>
                     </div>
                   </div>
 
-                  <div className="text-right font-medium text-gray-900">
-                    ${(product.price * line.quantity).toLocaleString()}
-                  </div>
+                  <div className="text-right font-medium text-gray-900">${(product.price * line.quantity).toLocaleString()}</div>
                 </div>
               );
             })}
 
-            <button
-              onClick={clear}
-              className="text-sm text-gray-500 hover:text-gray-900"
-            >
+            <button onClick={clear} className="text-sm text-gray-500 hover:text-gray-900">
               Clear cart
             </button>
           </div>
 
           <aside className="lg:col-span-1">
             <div className="border border-gray-200 rounded-lg p-6 space-y-6 sticky top-24">
-              <h2 className="text-lg font-medium text-gray-900">
-                Order Summary
-              </h2>
+              <h2 className="text-lg font-medium text-gray-900">Order Summary</h2>
 
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-gray-600">
@@ -232,9 +301,7 @@ export default function CheckoutPage() {
                       key={crypto}
                       onClick={() => setSelectedCrypto(crypto)}
                       className={`p-2 border rounded-lg text-sm font-medium transition-colors ${
-                        selectedCrypto === crypto
-                          ? "border-gray-900 bg-gray-50"
-                          : "border-gray-200 hover:border-gray-300"
+                        selectedCrypto === crypto ? "border-gray-900 bg-gray-50" : "border-gray-200 hover:border-gray-300"
                       }`}
                     >
                       {crypto}
@@ -243,31 +310,69 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-900">
-                  Your {selectedCrypto} wallet address
-                </label>
-                <input
-                  type="text"
-                  value={walletAddress}
-                  onChange={(e) => setWalletAddress(e.target.value)}
-                  placeholder={`0x... or bc1...`}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-gray-400"
-                />
+              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Mock Wallet</p>
+                    <p className="text-xs text-gray-500">Simulated MetaMask connection</p>
+                  </div>
+                  <button
+                    onClick={connectWallet}
+                    disabled={connected || isConnecting}
+                    className="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    {connected ? "Connected" : isConnecting ? "Connecting..." : "Connect Wallet"}
+                  </button>
+                </div>
+
+                {connected && address ? (
+                  <div className="space-y-2 text-sm text-gray-700">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Wallet address</p>
+                      <p className="font-mono text-xs break-all">{address}</p>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>{selectedCrypto} balance</span>
+                      <span className="font-medium">{walletBalance.toLocaleString()} {selectedCrypto}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Network</span>
+                      <span className="font-medium capitalize">{walletState.network}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-600">Connect your wallet to confirm this mock on-chain purchase.</p>
+                )}
               </div>
 
-              {error && (
-                <p className="text-sm text-red-600">{error}</p>
-              )}
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-gray-900">Mock payment confirmation</p>
+                <div className="space-y-2">
+                  {statusSteps.map((step) => (
+                    <div key={step.label} className="flex items-center gap-3 text-sm">
+                      <div
+                        className={`w-2.5 h-2.5 rounded-full ${step.done ? "bg-green-500" : step.active ? "bg-yellow-500" : "bg-gray-300"}`}
+                      />
+                      <span className={step.active ? "text-gray-900" : "text-gray-500"}>{step.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="text-sm text-gray-600 space-y-1">
+                <p className="font-medium text-gray-900">Review order details</p>
+                <p>{lines.length} item type{lines.length === 1 ? "" : "s"} • {itemCount} total piece{itemCount === 1 ? "" : "s"}</p>
+                <p>Each cart line is mapped to an in-memory marketplace listing and confirmed with a mock tx hash.</p>
+              </div>
+
+              {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
               <button
                 onClick={handleCheckout}
-                disabled={orderState === "processing"}
+                disabled={orderState === "processing" || !connected}
                 className="w-full py-3 bg-yellow-400 text-black font-medium rounded-lg hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {orderState === "processing"
-                  ? "PROCESSING..."
-                  : `COMPLETE PURCHASE WITH ${selectedCrypto}`}
+                {orderState === "processing" ? "CONFIRMING PURCHASE..." : `CONFIRM PURCHASE WITH ${selectedCrypto}`}
               </button>
             </div>
           </aside>
