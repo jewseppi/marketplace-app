@@ -21,6 +21,7 @@ type ProductRow = {
   image_additional: string;
   in_stock: number;
   sku: string;
+  deleted_at: string | null;
 };
 
 type CartRow = {
@@ -45,6 +46,17 @@ type OrderRow = {
   wallet_address: string | null;
   payment_expires_at: string | null;
   created_at: string;
+};
+
+type OrderItemDetailRow = {
+  order_id: string;
+  product_id: number;
+  quantity: number;
+  unit_price: number;
+  title: string;
+  category: ProductCategory;
+  sku: string;
+  image_main: string;
 };
 
 type ListingRow = {
@@ -82,6 +94,23 @@ export type Listing = {
 export type StoredOrder = Order & {
   walletAddress?: string | null;
   paymentExpiresAt?: string | null;
+};
+
+export type SellerProduct = Product & {
+  deletedAt: string | null;
+};
+
+export type OrderDetail = StoredOrder & {
+  items: Array<{
+    productId: number;
+    title: string;
+    category: ProductCategory;
+    sku: string;
+    image: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+  }>;
 };
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -142,6 +171,14 @@ function getDB() {
   return initDB();
 }
 
+function ensureOptionalColumns(db: InstanceType<typeof Database>) {
+  const columns = db.prepare("PRAGMA table_info(products)").all() as Array<{ name: string }>;
+  const names = new Set(columns.map((column) => column.name));
+  if (!names.has("deleted_at")) {
+    db.exec("ALTER TABLE products ADD COLUMN deleted_at TEXT");
+  }
+}
+
 function recalculateCartSubtotal(db: InstanceType<typeof Database>, cartId: string) {
   const row = db
     .prepare(
@@ -169,6 +206,7 @@ export function initDB() {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(readFileSync(SCHEMA_PATH, "utf8"));
+  ensureOptionalColumns(db);
 
   const productCount = db.prepare("SELECT COUNT(*) as count FROM products").get() as { count: number };
   if (!productCount.count) {
@@ -180,17 +218,25 @@ export function initDB() {
 }
 
 export function getProduct(id: number) {
-  const row = getDB().prepare("SELECT * FROM products WHERE id = ?").get(id) as ProductRow | undefined;
+  const row = getDB().prepare("SELECT * FROM products WHERE id = ? AND deleted_at IS NULL").get(id) as ProductRow | undefined;
   return row ? mapProduct(row) : undefined;
 }
 
 export function listProducts() {
-  const rows = getDB().prepare("SELECT * FROM products ORDER BY id ASC").all() as ProductRow[];
+  const rows = getDB().prepare("SELECT * FROM products WHERE deleted_at IS NULL ORDER BY id ASC").all() as ProductRow[];
   return rows.map(mapProduct);
 }
 
+export function listSellerProducts() {
+  const rows = getDB().prepare("SELECT * FROM products ORDER BY id ASC").all() as ProductRow[];
+  return rows.map((row): SellerProduct => ({
+    ...mapProduct(row),
+    deletedAt: row.deleted_at,
+  }));
+}
+
 export function searchProducts(options: { query?: string; category?: string | null }) {
-  const clauses: string[] = [];
+  const clauses: string[] = ["deleted_at IS NULL"];
   const values: Array<string> = [];
 
   if (options.category && options.category !== "all") {
@@ -342,6 +388,145 @@ export function getOrder(orderId: string) {
 export function listOrders() {
   const rows = getDB().prepare("SELECT * FROM orders ORDER BY created_at DESC").all() as OrderRow[];
   return rows.map(mapOrder);
+}
+
+export function listOrderDetails(status?: Order["status"] | "all") {
+  const db = getDB();
+  const rows = (status && status !== "all"
+    ? db.prepare("SELECT * FROM orders WHERE status = ? ORDER BY created_at DESC").all(status)
+    : db.prepare("SELECT * FROM orders ORDER BY created_at DESC").all()) as OrderRow[];
+
+  const itemStmt = db.prepare(
+    `SELECT
+      order_items.order_id,
+      order_items.product_id,
+      order_items.quantity,
+      order_items.unit_price,
+      products.title,
+      products.category,
+      products.sku,
+      products.image_main
+    FROM order_items
+    JOIN products ON products.id = order_items.product_id
+    WHERE order_items.order_id = ?
+    ORDER BY order_items.product_id ASC`,
+  );
+
+  return rows.map((row): OrderDetail => {
+    const items = itemStmt.all(row.id) as OrderItemDetailRow[];
+    return {
+      ...mapOrder(row),
+      items: items.map((item) => ({
+        productId: item.product_id,
+        title: item.title,
+        category: item.category,
+        sku: item.sku,
+        image: item.image_main,
+        quantity: item.quantity,
+        unitPrice: item.unit_price,
+        lineTotal: item.quantity * item.unit_price,
+      })),
+    };
+  });
+}
+
+export function updateOrderStatus(id: string, status: Order["status"]) {
+  const current = getOrder(id);
+  if (!current) {
+    return { error: "Order not found" };
+  }
+
+  getDB().prepare("UPDATE orders SET status = ? WHERE id = ?").run(status, id);
+  return getOrder(id)!;
+}
+
+export function createProduct(input: {
+  title: string;
+  description: string;
+  price: number;
+  category: ProductCategory;
+  imageMain: string;
+  additionalImages?: string[];
+  inStock?: boolean;
+  sku?: string;
+}) {
+  const db = getDB();
+  const now = new Date().toISOString();
+  const nextId = ((db.prepare("SELECT COALESCE(MAX(id), 0) AS maxId FROM products").get() as { maxId: number }).maxId ?? 0) + 1;
+  const sku = input.sku?.trim() || `CC-${input.category.toUpperCase()}-${String(nextId).padStart(3, "0")}`;
+
+  db.prepare(
+    `INSERT INTO products (
+      id, title, description, price, category, image_main, image_additional,
+      in_stock, sku, deleted_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+  ).run(
+    nextId,
+    input.title.trim(),
+    input.description.trim(),
+    input.price,
+    input.category,
+    input.imageMain.trim(),
+    JSON.stringify(input.additionalImages ?? []),
+    input.inStock === false ? 0 : 1,
+    sku,
+    now,
+    now,
+  );
+
+  return listSellerProducts().find((product) => product.id === nextId)!;
+}
+
+export function updateProduct(
+  id: number,
+  patch: Partial<{
+    title: string;
+    description: string;
+    price: number;
+    category: ProductCategory;
+    imageMain: string;
+    additionalImages: string[];
+    inStock: boolean;
+  }>,
+) {
+  const current = listSellerProducts().find((product) => product.id === id);
+  if (!current) {
+    return { error: "Product not found" };
+  }
+
+  getDB().prepare(
+    `UPDATE products SET
+      title = ?, description = ?, price = ?, category = ?, image_main = ?, image_additional = ?,
+      in_stock = ?, updated_at = ?
+     WHERE id = ?`,
+  ).run(
+    patch.title?.trim() ?? current.title,
+    patch.description?.trim() ?? current.description,
+    patch.price ?? current.price,
+    patch.category ?? current.category,
+    patch.imageMain?.trim() ?? current.images.main,
+    JSON.stringify(patch.additionalImages ?? current.images.additional),
+    (patch.inStock ?? current.inStock) ? 1 : 0,
+    new Date().toISOString(),
+    id,
+  );
+
+  return listSellerProducts().find((product) => product.id === id)!;
+}
+
+export function softDeleteProduct(id: number) {
+  const current = listSellerProducts().find((product) => product.id === id);
+  if (!current) {
+    return { error: "Product not found" };
+  }
+
+  getDB().prepare("UPDATE products SET deleted_at = ?, in_stock = 0, updated_at = ? WHERE id = ?").run(
+    new Date().toISOString(),
+    new Date().toISOString(),
+    id,
+  );
+
+  return listSellerProducts().find((product) => product.id === id)!;
 }
 
 export function getListing(id: string) {

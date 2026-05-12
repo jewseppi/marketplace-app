@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS products (
   image_additional TEXT NOT NULL DEFAULT '[]',
   in_stock INTEGER NOT NULL DEFAULT 1,
   sku TEXT NOT NULL UNIQUE,
+  deleted_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
