@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "./components/CartProvider";
 import { MockContractProvider } from "@/lib/mock-contract-context";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,9 +31,11 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <MockContractProvider>
-          <CartProvider>{children}</CartProvider>
-        </MockContractProvider>
+        <ErrorBoundary>
+          <MockContractProvider>
+            <CartProvider>{children}</CartProvider>
+          </MockContractProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

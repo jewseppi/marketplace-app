@@ -26,6 +26,7 @@ type CartContextValue = {
   lines: CartLine[];
   itemCount: number;
   subtotal: number;
+  loading: boolean;
   addItem: (id: number, quantity?: number) => Promise<void>;
   setQuantity: (id: number, quantity: number) => Promise<void>;
   removeItem: (id: number) => Promise<void>;
@@ -50,6 +51,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [itemCount, setItemCount] = useState(0);
   const [subtotal, setSubtotal] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   const applyCart = useCallback((data: CartResponse) => {
     const next = normalizeCart(data);
@@ -60,9 +62,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
-    const response = await fetch("/api/cart", { cache: "no-store" });
-    const data = (await response.json()) as CartResponse;
-    applyCart(data);
+    setLoading(true);
+    try {
+      const response = await fetch("/api/cart", { cache: "no-store" });
+      const data = (await response.json()) as CartResponse;
+      applyCart(data);
+    } finally {
+      setLoading(false);
+    }
   }, [applyCart]);
 
   useEffect(() => {
@@ -71,16 +78,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const mutateCart = useCallback(
     async (body: Record<string, unknown>) => {
-      const response = await fetch("/api/cart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = (await response.json()) as CartResponse & { error?: string };
-      if (!response.ok) {
-        throw new Error(data.error || "Cart update failed");
+      setLoading(true);
+      try {
+        const response = await fetch("/api/cart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = (await response.json()) as CartResponse & { error?: string };
+        if (!response.ok) {
+          throw new Error(data.error || "Cart update failed");
+        }
+        applyCart(data);
+      } finally {
+        setLoading(false);
       }
-      applyCart(data);
     },
     [applyCart],
   );
@@ -106,12 +118,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     lines,
     itemCount,
     subtotal,
+    loading,
     addItem,
     setQuantity,
     removeItem,
     clear,
     refresh,
-  }), [items, lines, itemCount, subtotal, addItem, setQuantity, removeItem, clear, refresh]);
+  }), [items, lines, itemCount, subtotal, loading, addItem, setQuantity, removeItem, clear, refresh]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

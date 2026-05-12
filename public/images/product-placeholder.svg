@@ -1,0 +1,8 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="1200" rx="48" fill="#F4F4F5"/>
+  <rect x="140" y="140" width="920" height="920" rx="36" fill="#E4E4E7"/>
+  <path d="M402 770L548 597C570 571 611 570 634 596L710 681L806 562C830 532 876 534 897 566L1000 721V823H402V770Z" fill="#D4D4D8"/>
+  <circle cx="445" cy="430" r="87" fill="#D4D4D8"/>
+  <path d="M295 925H905" stroke="#A1A1AA" stroke-width="34" stroke-linecap="round"/>
+  <text x="600" y="1000" text-anchor="middle" fill="#71717A" font-family="Arial, sans-serif" font-size="56" letter-spacing="6">CRYPTO COUTURE</text>
+</svg>

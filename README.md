@@ -1,36 +1,162 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Crypto Couture Marketplace
 
-## Getting Started
+Crypto Couture Marketplace is a **demo/prototype** luxury resale storefront built with Next.js 15. It simulates a crypto-native checkout flow, seller operations, and admin reporting without requiring a real wallet, chain, or external database service.
 
-First, run the development server:
+## What this is
+
+- Luxury marketplace UI with curated products
+- Mock crypto checkout using BTC / ETH / USDT / USDC
+- SQLite-backed catalog, cart, and order storage
+- Demo seller dashboard and admin panel
+- Mock smart-contract + wallet simulation for productized checkout demos
+
+## Features
+
+- Public storefront with featured products, search, category filters, and product detail pages
+- Cart + checkout flow backed by API routes and SQLite
+- Mock blockchain confirmation flow with transaction hashes and order confirmation page
+- Seller dashboard for inventory, orders, and analytics
+- Admin panel for users, reports, and platform settings
+- Loading states, product skeletons, error boundaries, and missing-image fallback handling
+- Docker, Docker Compose, and Vercel deployment config included
+
+## Tech stack
+
+- Next.js 15 App Router
+- React 19
+- TypeScript
+- Tailwind CSS
+- better-sqlite3
+- Framer Motion
+- Mock wallet / mock contract utilities
+
+## Demo credentials
+
+- Seller: `seller` / `seller123`
+- Admin: `admin` / `admin123`
+
+## Quick start
+
+### Local development
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:3000
+
+### Production-style local run
+
+```bash
+npm install
+npm run build
+npm run start
+```
+
+### Seed data
+
+The app auto-seeds the SQLite catalog on first run. You can also run:
+
+```bash
+npm run seed
+```
+
+## Docker quick start
+
+```bash
+docker compose up --build
+```
+
+Then open http://localhost:3000
+
+Notes:
+- App runs on Node 22
+- SQLite data is persisted in the `marketplace_data` Docker volume
+- The container runs as a non-root user
+
+## Available scripts
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build
+npm run start
+npm run smoke
+npm run seed
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Pages overview
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Public
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `/` — landing page + product discovery
+- `/product/[id]` — product detail page
+- `/checkout` — mock wallet + crypto checkout
+- `/checkout/confirm/[id]` — order confirmation details
 
-## Learn More
+### Seller
 
-To learn more about Next.js, take a look at the following resources:
+- `/seller` — seller overview
+- `/seller/products` — manage inventory
+- `/seller/orders` — review and update order statuses
+- `/seller/analytics` — mock seller reporting
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Admin
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `/admin` — admin overview
+- `/admin/users` — mock user management
+- `/admin/reports` — revenue and platform metrics
+- `/admin/settings` — fee + payment config mock UI
 
-## Deploy on Vercel
+## API endpoints
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `GET /api/products` — list products
+- `GET /api/products?id=<id>` — fetch one product
+- `GET /api/products?category=<category>&search=<query>` — filtered product listing
+- `GET /api/cart` — get active cart
+- `POST /api/cart` — mutate cart (`add`, `set-quantity`, `remove`, `clear`)
+- `GET /api/orders` — list orders
+- `GET /api/orders?orderId=<id>` — fetch one order
+- `POST /api/orders` — create order from current cart
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Mock smart contract info
+
+This project includes a **mock** marketplace contract flow for demo purposes:
+
+- Contract helper: `src/contracts/marketplace.ts`
+- Mock contract runtime: `src/lib/mock-contract.ts`
+- Mock wallet runtime: `src/lib/mock-wallet.ts`
+- Confirmation page shows simulated transaction hashes and order IDs
+
+No real blockchain transactions are broadcast.
+
+## Data storage
+
+- SQLite database file lives in `data/marketplace.db`
+- Product catalog is seeded from local project data
+- Orders and carts are stored locally for demo use
+
+## Verification
+
+Verified during this slice with:
+
+```bash
+npm run build
+npm run smoke
+```
+
+## Deployment notes
+
+### Docker
+
+- Uses a multi-stage build
+- Uses Next.js standalone output
+- Mount `/app/data` to persist SQLite data
+
+### Vercel
+
+`vercel.json` is included for standard Next.js deployment. Keep in mind this demo currently expects writable local SQLite storage, so persistent hosted database behavior is not part of the prototype.
+
+## License
+
+Currently **UNLICENSED**. Treat this repository as a private demo/prototype unless you add a license file.

@@ -1,13 +1,15 @@
 "use client";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import {
   PRODUCT_CATEGORIES,
   type Product,
 } from "@/data/products";
 import { Button } from "./ui/button";
+import { ProductCardSkeleton } from "@/components/ui/ProductCardSkeleton";
+import { ProductImage } from "@/components/ui/ProductImage";
+import { ErrorToast } from "@/components/ui/ErrorToast";
 
 type CategoryFilter = (typeof PRODUCT_CATEGORIES)[number];
 
@@ -24,16 +26,24 @@ export default function ProductExplorer() {
   const [query, setQuery] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
+    setError("");
     const params = new URLSearchParams();
     if (activeCategory !== "all") params.set("category", activeCategory);
     if (query.trim()) params.set("search", query.trim());
-    const res = await fetch(`/api/products?${params.toString()}`);
-    const data = await res.json();
-    setProducts(Array.isArray(data) ? data : []);
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/products?${params.toString()}`);
+      const data = await res.json();
+      setProducts(Array.isArray(data) ? data : []);
+    } catch {
+      setProducts([]);
+      setError("We couldn't load the latest products right now.");
+    } finally {
+      setLoading(false);
+    }
   }, [activeCategory, query]);
 
   useEffect(() => {
@@ -125,6 +135,8 @@ export default function ProductExplorer() {
         <p className="text-sm text-gray-500 text-center mb-8">
           {loading
             ? "Loading..."
+            : error
+              ? "Temporarily unavailable"
             : `${filtered.length} ${filtered.length === 1 ? "item" : "items"}${
                 activeCategory !== "all"
                   ? ` in ${CATEGORY_LABELS[activeCategory]}`
@@ -133,9 +145,13 @@ export default function ProductExplorer() {
         </p>
 
         {/* Product Grid */}
-        {loading ? (
-          <div className="text-center py-16">
-            <div className="inline-block w-8 h-8 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+        {error ? (
+          <ErrorToast message={error} className="mx-auto max-w-2xl" />
+        ) : loading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <ProductCardSkeleton key={index} />
+            ))}
           </div>
         ) : filtered.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
@@ -146,7 +162,7 @@ export default function ProductExplorer() {
               >
                 <Link href={`/product/${product.id}`}>
                   <div className="relative overflow-hidden">
-                    <Image
+                    <ProductImage
                       src={product.images.main}
                       alt={product.title}
                       width={400}

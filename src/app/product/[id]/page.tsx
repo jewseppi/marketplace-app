@@ -1,12 +1,14 @@
 "use client";
 
 import { use, useState, useEffect, useCallback } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Header from "@/app/header";
 import { useCart } from "@/app/components/CartProvider";
 import type { Product } from "@/data/products";
+import { ErrorToast } from "@/components/ui/ErrorToast";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { ProductImage } from "@/components/ui/ProductImage";
 
 interface ProductPageProps {
   params: Promise<{ id: string }>;
@@ -18,22 +20,31 @@ export default function ProductPage({ params }: ProductPageProps) {
   const [quantity, setQuantity] = useState(1);
   const [selectedCrypto, setSelectedCrypto] = useState("BTC");
   const [addedFlash, setAddedFlash] = useState(false);
+  const [addingToCart, setAddingToCart] = useState(false);
   const [product, setProduct] = useState<Product | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const { addItem } = useCart();
   const router = useRouter();
 
   const fetchProduct = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/products?id=${id}`);
-    if (res.ok) {
-      const data = await res.json();
-      setProduct(data);
-    } else {
+    setError("");
+    try {
+      const res = await fetch(`/api/products?id=${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setProduct(data);
+      } else {
+        setProduct(null);
+      }
+    } catch {
       setProduct(null);
+      setError("We couldn't load this product just now.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [id]);
 
   useEffect(() => {
@@ -54,23 +65,39 @@ export default function ProductPage({ params }: ProductPageProps) {
     }
   }, [product]);
 
-  const handleAddToCart = () => {
-    if (!product) return;
-    addItem(product.id, quantity);
-    setAddedFlash(true);
-    window.setTimeout(() => setAddedFlash(false), 1500);
+  const handleAddToCart = async () => {
+    if (!product || !product.inStock) return;
+    setAddingToCart(true);
+    setError("");
+    try {
+      await addItem(product.id, quantity);
+      setAddedFlash(true);
+      window.setTimeout(() => setAddedFlash(false), 1500);
+    } catch (cartError) {
+      setError(cartError instanceof Error ? cartError.message : "Unable to add this item to your cart.");
+    } finally {
+      setAddingToCart(false);
+    }
   };
 
-  const handleBuyNow = () => {
-    if (!product) return;
-    addItem(product.id, quantity);
-    router.push("/checkout");
+  const handleBuyNow = async () => {
+    if (!product || !product.inStock) return;
+    setAddingToCart(true);
+    setError("");
+    try {
+      await addItem(product.id, quantity);
+      router.push("/checkout");
+    } catch (cartError) {
+      setError(cartError instanceof Error ? cartError.message : "Unable to continue to checkout.");
+    } finally {
+      setAddingToCart(false);
+    }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="inline-block w-8 h-8 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+        <div className="min-h-screen flex items-center justify-center bg-white">
+        <LoadingSpinner label="Loading product details" />
       </div>
     );
   }
@@ -83,7 +110,7 @@ export default function ProductPage({ params }: ProductPageProps) {
             Product Not Found
           </h1>
           <p className="text-gray-600 mb-8">
-            We couldn&rsquo;t find the product you&rsquo;re looking for.
+            {error || "We couldn’t find the product you’re looking for."}
           </p>
           <Link
             href="/"
@@ -129,7 +156,7 @@ export default function ProductPage({ params }: ProductPageProps) {
           <div className="space-y-4">
             {/* Main Image */}
             <div className="aspect-square overflow-hidden bg-gray-50 rounded-lg">
-              <Image
+              <ProductImage
                 src={allImages[selectedImage]}
                 alt={product.title}
                 width={600}
@@ -151,7 +178,7 @@ export default function ProductPage({ params }: ProductPageProps) {
                       : "border-gray-200"
                   }`}
                 >
-                  <Image
+                  <ProductImage
                     src={image}
                     alt={`${product.title} view ${index + 1}`}
                     width={80}
@@ -204,6 +231,9 @@ export default function ProductPage({ params }: ProductPageProps) {
                 </div>
                 <p className="text-gray-500">
                   Free worldwide shipping • Authenticity guaranteed
+                </p>
+                <p className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${product.inStock ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                  {product.inStock ? "In stock" : "Out of stock"}
                 </p>
               </div>
 
@@ -258,18 +288,28 @@ export default function ProductPage({ params }: ProductPageProps) {
                 </div>
               </div>
 
+              {error ? <ErrorToast message={error} /> : null}
+
               {/* Action Buttons */}
               <div className="space-y-4">
                 <button
                   onClick={handleAddToCart}
-                  className="w-full py-4 bg-gray-900 text-white font-medium hover:bg-gray-800 transition-colors rounded-lg"
+                  disabled={addingToCart || !product.inStock}
+                  className="w-full rounded-lg bg-gray-900 py-4 font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
                 >
-                  {addedFlash ? "ADDED TO CART ✓" : "ADD TO CART"}
+                  {!product.inStock
+                    ? "OUT OF STOCK"
+                    : addingToCart
+                      ? "ADDING TO CART..."
+                      : addedFlash
+                        ? "ADDED TO CART ✓"
+                        : "ADD TO CART"}
                 </button>
 
                 <button
                   onClick={handleBuyNow}
-                  className="w-full py-4 bg-yellow-400 text-black font-medium hover:bg-yellow-500 transition-colors rounded-lg"
+                  disabled={!product.inStock || addingToCart}
+                  className="w-full rounded-lg bg-yellow-400 py-4 font-medium text-black transition-colors hover:bg-yellow-500 disabled:cursor-not-allowed disabled:bg-yellow-100 disabled:text-yellow-700"
                 >
                   BUY NOW WITH {selectedCrypto}
                 </button>
@@ -365,7 +405,7 @@ export default function ProductPage({ params }: ProductPageProps) {
               >
                 <div className="group cursor-pointer">
                   <div className="aspect-square overflow-hidden bg-gray-50 rounded-lg mb-4">
-                    <Image
+                    <ProductImage
                       src={relatedProduct.images.main}
                       alt={relatedProduct.title}
                       width={300}

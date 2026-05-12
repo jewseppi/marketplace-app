@@ -1,10 +1,13 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "@/app/header";
 import { useCart } from "@/app/components/CartProvider";
+import { ErrorToast } from "@/components/ui/ErrorToast";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { ProductImage } from "@/components/ui/ProductImage";
 import { useMockContract, useMockWallet } from "@/lib/mock-contract-context";
 import type { PaymentToken } from "@/lib/mock-contract";
 
@@ -22,21 +25,21 @@ type CheckoutOrder = {
   mockOrderIds: number[];
 };
 
-type OrderState = "idle" | "processing" | "success" | "error";
+type OrderState = "idle" | "processing" | "error";
 type ConfirmationStep = "idle" | "pending" | "confirmed";
 
 const CRYPTO_OPTIONS: PaymentToken[] = ["BTC", "ETH", "USDT", "USDC"];
 
 export default function CheckoutPage() {
-  const { lines, itemCount, subtotal, setQuantity, removeItem, clear, refresh } = useCart();
+  const { lines, itemCount, subtotal, setQuantity, removeItem, clear, refresh, loading } = useCart();
   const { contract } = useMockContract();
   const { connect, connected, address, walletState, getBalance } = useMockWallet();
+  const router = useRouter();
 
   const [selectedCrypto, setSelectedCrypto] = useState<PaymentToken>("BTC");
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [orderState, setOrderState] = useState<OrderState>("idle");
   const [confirmationStep, setConfirmationStep] = useState<ConfirmationStep>("idle");
-  const [orderData, setOrderData] = useState<CheckoutOrder | null>(null);
   const [error, setError] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
 
@@ -115,20 +118,26 @@ export default function CheckoutPage() {
         throw new Error(data.error || "Checkout failed");
       }
 
-      setConfirmationStep("confirmed");
-      setOrderData({
+      const confirmation: CheckoutOrder = {
         ...data.order,
         txHashes,
         mockOrderIds,
-      });
-      setOrderState("success");
+      };
+
+      window.sessionStorage.setItem(
+        `crypto-couture-order:${confirmation.id}`,
+        JSON.stringify(confirmation),
+      );
+
+      setConfirmationStep("confirmed");
       await refresh();
+      router.push(`/checkout/confirm/${confirmation.id}`);
     } catch (checkoutError) {
       setError(checkoutError instanceof Error ? checkoutError.message : "Checkout failed");
       setConfirmationStep("idle");
       setOrderState("error");
     }
-  }, [address, connected, contract, lines, refresh, selectedCrypto]);
+  }, [address, connected, contract, lines, refresh, router, selectedCrypto]);
 
   const statusSteps = useMemo(
     () => [
@@ -145,6 +154,17 @@ export default function CheckoutPage() {
     ],
     [confirmationStep],
   );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white">
+        <Header />
+        <div className="mx-auto flex max-w-5xl items-center justify-center px-6 pt-32">
+          <LoadingSpinner size="lg" label="Loading your cart" />
+        </div>
+      </div>
+    );
+  }
 
   if (itemCount === 0) {
     return (
@@ -164,59 +184,20 @@ export default function CheckoutPage() {
     );
   }
 
-  if (orderState === "success" && orderData) {
-    return (
-      <div className="min-h-screen bg-white">
-        <Header />
-        <div className="pt-24 max-w-3xl mx-auto px-6 py-12 text-center">
-          <div className="w-20 h-20 mx-auto mb-6 bg-green-50 rounded-full flex items-center justify-center">
-            <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h1 className="text-4xl font-light text-gray-900 mb-4">Payment Confirmed</h1>
-          <p className="text-gray-600 mb-8">
-            Order <span className="font-mono text-sm">{orderData.id}</span> has been recorded and confirmed on the mock chain.
-          </p>
-
-          <div className="border border-gray-200 rounded-lg p-6 text-left space-y-4">
-            <h3 className="font-medium text-gray-900">Confirmation Details</h3>
-            <div className="space-y-2 text-sm text-gray-600">
-              <p>
-                Paid with <strong>{orderData.payment.currency}</strong> from <span className="font-mono text-xs break-all">{orderData.payment.walletAddress}</span>
-              </p>
-              <p>
-                Mock contract orders: <strong>{orderData.mockOrderIds.join(", ")}</strong>
-              </p>
-              <div>
-                <p className="mb-2 font-medium text-gray-900">Transaction Hash{orderData.txHashes.length > 1 ? "es" : ""}</p>
-                <div className="space-y-2">
-                  {orderData.txHashes.map((hash) => (
-                    <div key={hash} className="bg-gray-50 p-3 font-mono text-xs break-all">
-                      {hash}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 space-x-4">
-            <Link href="/" className="inline-block px-8 py-3 bg-gray-900 text-white hover:bg-gray-800 transition-colors font-medium">
-              CONTINUE SHOPPING
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-white">
       <Header />
 
       <div className="pt-24 max-w-5xl mx-auto px-6 py-12">
-        <h1 className="text-3xl md:text-4xl font-light text-gray-900 mb-8">Checkout</h1>
+        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-light text-gray-900">Checkout</h1>
+            <p className="mt-2 text-sm text-gray-500">Demo crypto checkout with mock wallet + mock contract confirmation.</p>
+          </div>
+          <span className="rounded-full bg-gray-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-gray-600">
+            {itemCount} item{itemCount === 1 ? "" : "s"}
+          </span>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           <div className="lg:col-span-2 space-y-6">
@@ -225,7 +206,7 @@ export default function CheckoutPage() {
               return (
                 <div key={line.id} className="flex gap-4 border-b border-gray-100 pb-6">
                   <div className="w-24 h-24 flex-shrink-0 bg-gray-50 rounded-lg overflow-hidden">
-                    <Image
+                    <ProductImage
                       src={product.images.main}
                       alt={product.title}
                       width={96}
@@ -240,7 +221,7 @@ export default function CheckoutPage() {
                     </Link>
                     <p className="text-sm text-gray-500 line-clamp-2 mt-1">{product.description}</p>
 
-                    <div className="flex items-center justify-between mt-3">
+                    <div className="flex items-center justify-between mt-3 gap-4">
                       <div className="flex items-center border border-gray-200 rounded-lg">
                         <button
                           onClick={() => setQuantity(line.id, line.quantity - 1)}
@@ -359,13 +340,18 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
+              <div className="rounded-2xl border border-yellow-100 bg-yellow-50 px-4 py-3 text-sm text-yellow-900">
+                <p className="font-medium">What happens next</p>
+                <p className="mt-1 text-yellow-800">After confirmation you’ll land on a demo order page with payment details, mock tx hashes, and fulfillment instructions.</p>
+              </div>
+
               <div className="text-sm text-gray-600 space-y-1">
                 <p className="font-medium text-gray-900">Review order details</p>
                 <p>{lines.length} item type{lines.length === 1 ? "" : "s"} • {itemCount} total piece{itemCount === 1 ? "" : "s"}</p>
                 <p>Each cart line is mapped to an in-memory marketplace listing and confirmed with a mock tx hash.</p>
               </div>
 
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
+              {error ? <ErrorToast message={error} /> : null}
 
               <button
                 onClick={handleCheckout}
